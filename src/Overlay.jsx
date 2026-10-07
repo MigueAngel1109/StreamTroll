@@ -20,6 +20,15 @@ function Overlay() {
         setTimeout(() => setActiveEffect(''), data.duration || 5000);
       } else if (data.type === 'ALERT') {
         const id = Date.now();
+        
+        if (data.tts && window.speechSynthesis) {
+          const textToRead = `${data.user} ha donado ${data.amount}. Dice: ${data.message}`;
+          const utterance = new SpeechSynthesisUtterance(textToRead);
+          utterance.lang = 'es-ES';
+          utterance.rate = 1.1; // A bit faster for streaming hype
+          window.speechSynthesis.speak(utterance);
+        }
+
         setAlerts((prev) => [...prev, { ...data, id }]);
         setTimeout(() => {
           setAlerts((prev) => prev.filter((a) => a.id !== id));

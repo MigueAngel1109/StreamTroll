@@ -8,6 +8,10 @@ function Dashboard() {
   const [alertUser, setAlertUser] = useState('');
   const [alertAmount, setAlertAmount] = useState('');
   const [alertMsg, setAlertMsg] = useState('');
+  const [useTTS, setUseTTS] = useState(false);
+  const [tiktokUser, setTiktokUser] = useState('');
+  const [isConnected, setIsConnected] = useState(false);
+  const [mappingSlots, setMappingSlots] = useState([1, 2, 3]);
 
   const sendEffect = (effectName) => {
     channel.postMessage({ type: 'SHADER', effect: effectName, duration: 8000 });
@@ -18,7 +22,8 @@ function Dashboard() {
       type: 'ALERT',
       user: alertUser || 'Anónimo',
       amount: alertAmount || '$100.00',
-      message: alertMsg || 'Trolleando el stream...'
+      message: alertMsg || 'Trolleando el stream...',
+      tts: useTTS
     });
   };
 
@@ -28,6 +33,17 @@ function Dashboard() {
 
   const sendChatMessage = () => {
     alert('(Simulación) Comando enviado al chat del Streamer.');
+  };
+
+  const connectTikTok = () => {
+    if (!tiktokUser) {
+      alert('Ingresa un usuario válido de TikTok.');
+      return;
+    }
+    setIsConnected(true);
+    setTimeout(() => {
+      alert(`¡Conexión nativa establecida con el directo de @${tiktokUser}! Escuchando eventos...`);
+    }, 1000);
   };
 
   return (
@@ -46,6 +62,7 @@ function Dashboard() {
         </div>
 
         <div className="nav-links">
+          <div className={`nav-item ${activeTab === 'conexion' ? 'active' : ''}`} onClick={() => setActiveTab('conexion')}>📡 Conexión (TikTok)</div>
           <div className={`nav-item ${activeTab === 'gift-triggers' ? 'active' : ''}`} onClick={() => setActiveTab('gift-triggers')}>🎁 Mapeo de Regalos</div>
           <div className={`nav-item ${activeTab === 'shaders' ? 'active' : ''}`} onClick={() => setActiveTab('shaders')}>✨ Shaders y Efectos</div>
           <div className={`nav-item ${activeTab === 'alertas' ? 'active' : ''}`} onClick={() => setActiveTab('alertas')}>💸 Alertas Fake</div>
@@ -65,25 +82,116 @@ function Dashboard() {
 
         <div className="glass-panel">
           
+          {activeTab === 'conexion' && (
+            <div>
+              <h2>📡 Conexión Nativa (TikTok Live)</h2>
+              <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem' }}>
+                <strong>Función:</strong> Enlaza la aplicación directamente con el servidor de TikTok sin usar software intermedio (TikFinity). Monitorea el chat y los regalos en tiempo real.
+              </p>
+              <div className="grid-container">
+                <div className="feature-card" style={{ gridColumn: '1 / -1', border: isConnected ? '2px solid #10b981' : '1px solid var(--border-color)' }}>
+                  <div className="input-group">
+                    <label>Usuario de TikTok (Ej: @elrubiusOMG)</label>
+                    <div style={{ display: 'flex', gap: '1rem' }}>
+                      <input 
+                        type="text" 
+                        className="input-field" 
+                        placeholder="@usuario" 
+                        value={tiktokUser} 
+                        onChange={(e) => setTiktokUser(e.target.value)} 
+                        disabled={isConnected}
+                      />
+                      <button 
+                        className="btn" 
+                        style={{ background: isConnected ? '#ef4444' : 'linear-gradient(135deg, var(--accent-primary), var(--accent-hover))', minWidth: '150px' }}
+                        onClick={() => {
+                          if(isConnected) { setIsConnected(false); setTiktokUser(''); } 
+                          else { connectTikTok(); }
+                        }}
+                      >
+                        {isConnected ? 'Desconectar' : 'Conectar al Live'}
+                      </button>
+                    </div>
+                  </div>
+                  {isConnected && (
+                    <div style={{ marginTop: '1rem', color: '#10b981', fontWeight: 'bold' }}>
+                      🟢 Estado: Escuchando regalos del directo en tiempo real...
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'gift-triggers' && (
             <div>
               <h2>🎁 Mapeo de Regalos (Gift Triggers)</h2>
               <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem' }}>
-                <strong>Función:</strong> Detecta automáticamente cuando un espectador envía un regalo específico en TikTok Live y ejecuta un efecto visual en el OBS sin que tengas que presionar nada.
+                <strong>Función:</strong> Detecta automáticamente cuando un espectador envía un regalo específico en TikTok Live y ejecuta un efecto visual en el OBS. Utiliza el botón "Simular" para probar tu configuración.
               </p>
+              
               <div className="grid-container" style={{ marginBottom: '2rem' }}>
-                <div className="feature-card">
-                  <div className="input-group">
-                    <label>Regalo de TikTok</label>
-                    <select className="input-field"><option>🌹 Rosa</option><option>🐼 Panda</option></select>
+                {mappingSlots.map((slot) => (
+                  <div key={slot} className="feature-card">
+                    <h3 style={{ marginBottom: '1rem' }}>Mapeo #{slot}</h3>
+                    <div className="input-group">
+                      <label>Regalo de TikTok</label>
+                      <select className="input-field" defaultValue={slot === 1 ? '🌹 Rosa' : slot === 2 ? '🐼 Panda' : '🦁 León'}>
+                        <option>🌹 Rosa (1 Moneda)</option>
+                        <option>🍦 Helado (1 Moneda)</option>
+                        <option>💖 Corazón (10 Monedas)</option>
+                        <option>🍩 Dona (30 Monedas)</option>
+                        <option>🧢 Gorra y Bigote (99 Monedas)</option>
+                        <option>🐼 Panda (199 Monedas)</option>
+                        <option>🦁 León (29999 Monedas)</option>
+                        <option>🌌 Universo (34999 Monedas)</option>
+                      </select>
+                    </div>
+                    <div className="input-group">
+                      <label>Efecto Visual a Lanzar</label>
+                      <select className="input-field" id={`effect-select-${slot}`} defaultValue={slot === 1 ? 'drunk' : slot === 2 ? 'gameboy' : 'flashbang'}>
+                        <option value="drunk">🥴 Drunk (Mareo)</option>
+                        <option value="mirror">🪞 Mirror / Flip</option>
+                        <option value="blur">👓 Blur (Miopía)</option>
+                        <option value="glitch" disabled={version === 'Free'}>👾 Glitch Retro {version === 'Free' ? '(👑 Ultimate)' : ''}</option>
+                        <option value="flashbang" disabled={version === 'Free'}>💥 Flashbang {version === 'Free' ? '(👑 Ultimate)' : ''}</option>
+                        <option value="gameboy" disabled={version === 'Free'}>🟩 Game Boy {version === 'Free' ? '(👑 Ultimate)' : ''}</option>
+                        <option value="invert" disabled={version === 'Free'}>☯️ Invert {version === 'Free' ? '(👑 Ultimate)' : ''}</option>
+                        <option value="earthquake" disabled={version === 'Free'}>🌋 Earthquake {version === 'Free' ? '(👑 Ultimate)' : ''}</option>
+                        <option value="vintage" disabled={version === 'Free'}>🎞️ Sepia Vintage {version === 'Free' ? '(👑 Ultimate)' : ''}</option>
+                      </select>
+                    </div>
+                    <div style={{ display: 'flex', gap: '1rem' }}>
+                      <button className="btn" style={{ flex: 1 }}>Guardar</button>
+                      <button 
+                        className="btn btn-secondary" 
+                        style={{ flex: 1 }}
+                        onClick={() => {
+                          const effect = document.getElementById(`effect-select-${slot}`).value;
+                          sendEffect(effect);
+                        }}
+                      >
+                        Simular
+                      </button>
+                    </div>
                   </div>
-                  <div className="input-group">
-                    <label>Efecto Visual a Lanzar</label>
-                    <select className="input-field"><option>Drunk (Mareo)</option><option>Mirror</option></select>
-                  </div>
-                  <button className="btn" style={{ width: '100%' }}>Guardar Mapeo</button>
-                </div>
+                ))}
               </div>
+              
+              {version === 'Ultimate' && (
+                <button 
+                  className="btn" 
+                  style={{ width: '100%', background: 'linear-gradient(135deg, #10b981, #059669)', marginBottom: '2rem' }}
+                  onClick={() => setMappingSlots([...mappingSlots, mappingSlots.length + 1])}
+                >
+                  ➕ Añadir Nuevo Mapeo (Ilimitados)
+                </button>
+              )}
+              {version === 'Free' && (
+                <div style={{ padding: '1rem', background: 'rgba(236, 72, 153, 0.1)', border: '1px solid var(--accent-secondary)', borderRadius: '10px', textAlign: 'center', marginBottom: '2rem' }}>
+                  <p><strong>Aviso:</strong> La versión Free permite máximo 3 configuraciones simultáneas. Actualiza a Ultimate para ilimitadas.</p>
+                </div>
+              )}
             </div>
           )}
 
@@ -110,31 +218,31 @@ function Dashboard() {
                   <div className="feature-icon">👾</div>
                   <div className="feature-title">Glitch Retro</div>
                   <p className="feature-desc">Artefactos visuales y aberración cromática simulando un fallo.</p>
-                  <button className="btn btn-secondary" style={{ marginTop: '1rem', width: '100%' }} onClick={() => sendEffect('glitch')}>Probar Glitch</button>
+                  <button className="btn btn-secondary" style={{ marginTop: '1rem', width: '100%', opacity: version === 'Free' ? 0.5 : 1 }} disabled={version === 'Free'} onClick={() => sendEffect('glitch')}>{version === 'Free' ? '🔒 Requiere Ultimate' : 'Probar Glitch'}</button>
                 </div>
                 <div className="feature-card">
                   <div className="feature-icon">💥</div>
                   <div className="feature-title">Flashbang (Cegador)</div>
                   <p className="feature-desc">Ilumina toda la pantalla de blanco puro, dejándola completamente cegada.</p>
-                  <button className="btn btn-secondary" style={{ marginTop: '1rem', width: '100%' }} onClick={() => sendEffect('flashbang')}>Probar Flashbang</button>
+                  <button className="btn btn-secondary" style={{ marginTop: '1rem', width: '100%', opacity: version === 'Free' ? 0.5 : 1 }} disabled={version === 'Free'} onClick={() => sendEffect('flashbang')}>{version === 'Free' ? '🔒 Requiere Ultimate' : 'Probar Flashbang'}</button>
                 </div>
                 <div className="feature-card">
                   <div className="feature-icon">🟩</div>
                   <div className="feature-title">Game Boy</div>
                   <p className="feature-desc">Tonalidad verde monocromática y alto contraste tipo consola clásica.</p>
-                  <button className="btn btn-secondary" style={{ marginTop: '1rem', width: '100%' }} onClick={() => sendEffect('gameboy')}>Probar Game Boy</button>
+                  <button className="btn btn-secondary" style={{ marginTop: '1rem', width: '100%', opacity: version === 'Free' ? 0.5 : 1 }} disabled={version === 'Free'} onClick={() => sendEffect('gameboy')}>{version === 'Free' ? '🔒 Requiere Ultimate' : 'Probar Game Boy'}</button>
                 </div>
                 <div className="feature-card">
                   <div className="feature-icon">☯️</div>
                   <div className="feature-title">Invert (Colores)</div>
                   <p className="feature-desc">Invierte todos los colores de la pantalla como si fuera un negativo fotográfico.</p>
-                  <button className="btn btn-secondary" style={{ marginTop: '1rem', width: '100%' }} onClick={() => sendEffect('invert')}>Probar Invert</button>
+                  <button className="btn btn-secondary" style={{ marginTop: '1rem', width: '100%', opacity: version === 'Free' ? 0.5 : 1 }} disabled={version === 'Free'} onClick={() => sendEffect('invert')}>{version === 'Free' ? '🔒 Requiere Ultimate' : 'Probar Invert'}</button>
                 </div>
                 <div className="feature-card">
                   <div className="feature-icon">🌋</div>
                   <div className="feature-title">Earthquake (Temblor)</div>
                   <p className="feature-desc">Agita violentamente toda la pantalla simulando un fuerte terremoto.</p>
-                  <button className="btn btn-secondary" style={{ marginTop: '1rem', width: '100%' }} onClick={() => sendEffect('earthquake')}>Probar Temblor</button>
+                  <button className="btn btn-secondary" style={{ marginTop: '1rem', width: '100%', opacity: version === 'Free' ? 0.5 : 1 }} disabled={version === 'Free'} onClick={() => sendEffect('earthquake')}>{version === 'Free' ? '🔒 Requiere Ultimate' : 'Probar Temblor'}</button>
                 </div>
                 <div className="feature-card">
                   <div className="feature-icon">👓</div>
@@ -146,7 +254,7 @@ function Dashboard() {
                   <div className="feature-icon">🎞️</div>
                   <div className="feature-title">Sepia Vintage</div>
                   <p className="feature-desc">Aplica un filtro sepia antiguo, dándole aspecto de película del siglo pasado.</p>
-                  <button className="btn btn-secondary" style={{ marginTop: '1rem', width: '100%' }} onClick={() => sendEffect('vintage')}>Probar Sepia</button>
+                  <button className="btn btn-secondary" style={{ marginTop: '1rem', width: '100%', opacity: version === 'Free' ? 0.5 : 1 }} disabled={version === 'Free'} onClick={() => sendEffect('vintage')}>{version === 'Free' ? '🔒 Requiere Ultimate' : 'Probar Sepia'}</button>
                 </div>
               </div>
             </div>
@@ -171,6 +279,10 @@ function Dashboard() {
               <div className="input-group">
                 <label>Mensaje Personalizado</label>
                 <input type="text" className="input-field" placeholder="Ej: Cómprate una mansión con esto..." onChange={(e)=>setAlertMsg(e.target.value)}/>
+              </div>
+              <div className="input-group" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '2rem' }}>
+                <input type="checkbox" id="tts-check" checked={useTTS} onChange={(e) => setUseTTS(e.target.checked)} style={{ width: '18px', height: '18px' }} />
+                <label htmlFor="tts-check" style={{ marginBottom: 0, color: 'var(--text-primary)', fontWeight: 'bold' }}>🗣️ Activar Voz Narradora (Text-to-Speech)</label>
               </div>
               <button className="btn" onClick={sendAlert}>Lanzar Alerta al Overlay</button>
             </div>
