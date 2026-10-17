@@ -19,13 +19,16 @@
       "output": "dist_electron"
     },
     "win": {
-      "target": ["nsis"]
+      "target": [
+        "nsis"
+      ]
     }
   },
   "dependencies": {
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.4"
+    "react-router-dom": "^7.18.4",
+    "tiktok-live-connector": "^2.5.0"
   },
   "devDependencies": {
     "@types/react": "^19.2.18",

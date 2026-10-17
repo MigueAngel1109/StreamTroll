@@ -6,12 +6,16 @@ function Overlay() {
   const [activeEffect, setActiveEffect] = useState('');
   const [alerts, setAlerts] = useState([]);
 
+  const [showStatus, setShowStatus] = useState(true);
+
   useEffect(() => {
-    // Set a slight dark background for testing in browser so text is visible
-    // In a real OBS environment, this should be fully transparent.
-    document.body.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+    // In OBS, background must be fully transparent
+    document.body.style.backgroundColor = 'transparent';
     document.body.style.backgroundImage = 'none';
     document.body.style.color = 'white';
+
+    // Hide status banner after 4 seconds so it doesn't show in live stream
+    const timer = setTimeout(() => setShowStatus(false), 4000);
 
     channel.onmessage = (event) => {
       const data = event.data;
@@ -37,6 +41,7 @@ function Overlay() {
     };
 
     return () => {
+      clearTimeout(timer);
       channel.onmessage = null;
       document.body.style.backgroundColor = '';
       document.body.style.backgroundImage = '';
@@ -46,11 +51,13 @@ function Overlay() {
 
   return (
     <div className={`overlay-container ${activeEffect}`}>
-      <div style={{ position: 'absolute', bottom: '20px', right: '20px', background: 'rgba(0,0,0,0.5)', padding: '10px', borderRadius: '8px', border: '1px solid #4ade80' }}>
-        <span style={{color: '#4ade80'}}>🟢 OVERLAY ACTIVO Y CONECTADO</span>
-        <br/>
-        <span style={{fontSize: '12px', color: '#ccc'}}>Si ves esto, está listo para recibir alertas.</span>
-      </div>
+      {showStatus && (
+        <div style={{ position: 'absolute', bottom: '20px', right: '20px', background: 'rgba(0,0,0,0.7)', padding: '10px 14px', borderRadius: '8px', border: '1px solid #4ade80', transition: 'opacity 0.5s' }}>
+          <span style={{color: '#4ade80', fontWeight: 'bold'}}>🟢 OVERLAY ACTIVO Y CONECTADO</span>
+          <br/>
+          <span style={{fontSize: '12px', color: '#ccc'}}>Listo para recibir alertas en OBS.</span>
+        </div>
+      )}
       
       <div className="alerts-container">
         {alerts.map((alert) => (
