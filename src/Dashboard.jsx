@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 
 const channel = new BroadcastChannel('stream_troll_channel');
 
@@ -49,10 +50,12 @@ function Dashboard() {
   return (
     <div className="app-container">
       <div className="sidebar" style={{ overflowY: 'auto' }}>
-        <div className="logo-container">
-          <div className="logo-icon">ST</div>
-          <div className="logo-text">StreamTroll</div>
-        </div>
+        <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <div className="logo-container">
+            <div className="logo-icon">ST</div>
+            <div className="logo-text">StreamTroll</div>
+          </div>
+        </Link>
         
         <div style={{ marginBottom: '1rem', background: 'rgba(255,255,255,0.05)', padding: '0.8rem', borderRadius: '10px' }}>
           <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Licencia actual:</span>

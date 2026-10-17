@@ -18,12 +18,12 @@ function createWindow() {
   });
 
   if (isDev) {
-    // In dev, load Vite's local dev server
-    mainWindow.loadURL('http://localhost:5173');
+    // In dev, load Vite's local dev server directly into dashboard
+    mainWindow.loadURL('http://localhost:5173/#/dashboard');
     mainWindow.webContents.openDevTools();
   } else {
-    // In production, load the built index.html
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    // In production, load the built index.html into dashboard
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'), { hash: 'dashboard' });
   }
 }
 
