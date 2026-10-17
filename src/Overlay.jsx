@@ -8,9 +8,11 @@ function Overlay() {
 
   const [showStatus, setShowStatus] = useState(true);
 
+  const isChroma = window.location.href.includes('chroma=true');
+
   useEffect(() => {
-    // In OBS, background must be fully transparent
-    document.body.style.backgroundColor = 'transparent';
+    // In OBS browser source, background is transparent; in Chroma mode, it's green #00ff00
+    document.body.style.backgroundColor = isChroma ? '#00ff00' : 'transparent';
     document.body.style.backgroundImage = 'none';
     document.body.style.color = 'white';
 

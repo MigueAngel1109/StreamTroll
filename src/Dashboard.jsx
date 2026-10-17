@@ -117,6 +117,206 @@ function Dashboard() {
   const isElectron = typeof window !== 'undefined' && (window.process?.type || window.require);
   const ipcRendererRef = useRef(null);
 
+  // OBS WebSocket & Overlay Execution states
+  const [obsPort, setObsPort] = useState(4455);
+  const [obsPassword, setObsPassword] = useState('');
+  const [obsConnected, setObsConnected] = useState(false);
+  const [obsConnecting, setObsConnecting] = useState(false);
+  const [obsSceneName, setObsSceneName] = useState('');
+  const [obsStatusMsg, setObsStatusMsg] = useState('');
+  const obsSocketRef = useRef(null);
+
+  // Helper for OBS v5 SHA-256 base64 auth
+  const sha256Base64 = async (str) => {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(str);
+    const hash = await crypto.subtle.digest('SHA-256', data);
+    return btoa(String.fromCharCode(...new Uint8Array(hash)));
+  };
+
+  const connectObs = () => {
+    if (obsSocketRef.current) {
+      try { obsSocketRef.current.close(); } catch {}
+    }
+
+    setObsConnecting(true);
+    setObsStatusMsg('Conectando con OBS en ws://127.0.0.1:' + obsPort + '...');
+
+    try {
+      const ws = new WebSocket(`ws://127.0.0.1:${obsPort}`);
+      obsSocketRef.current = ws;
+
+      ws.onopen = () => {
+        setObsStatusMsg('Conexión establecida, identificando con OBS Studio...');
+      };
+
+      ws.onmessage = async (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+
+          // op 0: Hello from OBS
+          if (msg.op === 0) {
+            const { authentication } = msg.d;
+            let authResponse = null;
+
+            if (authentication) {
+              if (!obsPassword) {
+                setObsStatusMsg('⚠️ OBS requiere contraseña. Ingrésala abajo.');
+                setObsConnecting(false);
+                return;
+              }
+              const secret = await sha256Base64(obsPassword + authentication.salt);
+              authResponse = await sha256Base64(secret + authentication.challenge);
+            }
+
+            // Send op 1: Identify
+            ws.send(JSON.stringify({
+              op: 1,
+              d: {
+                rpcVersion: 1,
+                ...(authResponse ? { authentication: authResponse } : {})
+              }
+            }));
+          }
+
+          // op 2: Identified (Connected!)
+          else if (msg.op === 2) {
+            setObsConnected(true);
+            setObsConnecting(false);
+            setObsStatusMsg('🟢 ¡Conectado exitosamente con OBS Studio!');
+            showToast('🟢 ¡Conectado con OBS Studio!');
+
+            // Ask for current program scene
+            ws.send(JSON.stringify({
+              op: 6,
+              d: {
+                requestType: 'GetCurrentProgramScene',
+                requestId: 'get-current-scene'
+              }
+            }));
+          }
+
+          // op 7: RequestResponse
+          else if (msg.op === 7) {
+            if (msg.d.requestId === 'get-current-scene' && msg.d.requestStatus?.result) {
+              setObsSceneName(msg.d.responseData?.currentProgramSceneName || 'Escena Principal');
+            } else if (msg.d.requestId === 'inject-overlay') {
+              if (msg.d.requestStatus?.result) {
+                showToast('🎉 ¡Fuente StreamTroll Overlay añadida en OBS!');
+                setObsStatusMsg('✅ Fuente inyectada en la escena actual de OBS');
+              } else {
+                showToast('ℹ️ ' + (msg.d.requestStatus?.comment || 'Fuente procesada en OBS'));
+              }
+            }
+          }
+        } catch (err) {
+          console.error('OBS message error:', err);
+        }
+      };
+
+      ws.onerror = () => {
+        setObsConnecting(false);
+        setObsConnected(false);
+        setObsStatusMsg('🔴 No se pudo conectar a OBS. Verifica que OBS esté abierto y tenga activado el WebSocket (Herramientas > Configuración del servidor WebSocket).');
+      };
+
+      ws.onclose = () => {
+        setObsConnected(false);
+        setObsConnecting(false);
+      };
+    } catch (err) {
+      setObsConnecting(false);
+      setObsStatusMsg('🔴 Error al conectar: ' + err.message);
+    }
+  };
+
+  const disconnectObs = () => {
+    if (obsSocketRef.current) {
+      try { obsSocketRef.current.close(); } catch {}
+      obsSocketRef.current = null;
+    }
+    setObsConnected(false);
+    setObsStatusMsg('Desconectado de OBS');
+    showToast('Desconectado de OBS');
+  };
+
+  const injectOverlayIntoObs = () => {
+    if (!obsSocketRef.current || !obsConnected) {
+      alert('Conecta primero con OBS Studio.');
+      return;
+    }
+
+    const overlayUrl = isElectron 
+      ? 'http://127.0.0.1:18923/#/overlay' 
+      : `${window.location.origin}${window.location.pathname}#/overlay`;
+
+    // Send CreateInput request to OBS
+    obsSocketRef.current.send(JSON.stringify({
+      op: 6,
+      d: {
+        requestType: 'CreateInput',
+        requestId: 'inject-overlay',
+        requestData: {
+          sceneName: obsSceneName || undefined,
+          inputName: 'StreamTroll Overlay',
+          inputKind: 'browser_source',
+          inputSettings: {
+            url: overlayUrl,
+            width: 1920,
+            height: 1080,
+            fps: 60,
+            restart_when_active: true,
+            shutdown: false
+          }
+        }
+      }
+    }));
+  };
+
+  const downloadObsDragFile = () => {
+    const overlayUrl = isElectron 
+      ? 'http://127.0.0.1:18923/#/overlay' 
+      : `${window.location.origin}${window.location.pathname}#/overlay`;
+
+    const htmlContent = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>StreamTroll Overlay</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100vw; height: 100vh; overflow: hidden; background: transparent; }
+    iframe { width: 100%; height: 100%; border: none; background: transparent; }
+  </style>
+</head>
+<body>
+  <iframe src="${overlayUrl}" allow="autoplay"></iframe>
+</body>
+</html>`;
+
+    const blob = new Blob([htmlContent], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'StreamTroll_OBS_Overlay.html';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('📥 ¡Archivo descargado! Arrástralo adentro de la ventana de OBS');
+  };
+
+  const openPopout = (chroma = false) => {
+    const baseUrl = window.location.origin + window.location.pathname;
+    const overlayUrl = `${baseUrl}#/overlay${chroma ? '?chroma=true' : ''}`;
+    window.open(
+      overlayUrl,
+      'StreamTrollOverlayWindow',
+      'width=1280,height=720,menubar=no,toolbar=no,location=no,status=no,resizable=yes'
+    );
+    showToast(chroma ? '🟩 Ventana Chroma abierta para captura' : '🪟 Ventana Pop-out abierta');
+  };
+
   useEffect(() => {
     if (isElectron && window.require) {
       try {
@@ -894,67 +1094,215 @@ function Dashboard() {
             </div>
           )}
 
-          {/* TAB 6: OVERLAY SETUP */}
+          {/* TAB 6: OVERLAY SETUP & OBS EXECUTION */}
           {activeTab === 'overlay' && (
             <div>
-              <h2>🖥️ Configuración del Overlay para OBS Studio</h2>
-              <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem' }}>
-                Agrega esta URL como <strong>"Browser Source" (Fuente de Navegador)</strong> en OBS Studio:
-              </p>
+              <div style={{ marginBottom: '2rem' }}>
+                <h2>🖥️ Opciones para Ejecutar el Overlay en OBS Studio</h2>
+                <p style={{ color: 'var(--text-secondary)' }}>
+                  Elige la forma más cómoda para ti de integrar y ejecutar los efectos y alertas de StreamTroll en OBS Studio o TikTok Live Studio:
+                </p>
+              </div>
 
-              <div className="feature-card" style={{ marginBottom: '2rem' }}>
-                <div className="input-group">
-                  <label>URL para OBS (Servidor Local Nativo en Windows):</label>
-                  <div style={{ display: 'flex', gap: '1rem' }}>
-                    <input
-                      type="text"
-                      className="input-field"
-                      readOnly
-                      value="http://127.0.0.1:18923/#/overlay"
-                    />
+              {/* GRID OF OBS EXECUTION OPTIONS */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
+                
+                {/* METHOD 1: AUTOMATIC OBS WEBSOCKET INJECTION */}
+                <div className="feature-card" style={{ border: obsConnected ? '2px solid #10b981' : '1px solid rgba(139, 92, 246, 0.4)', background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.06), transparent)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      <span style={{ fontSize: '1.8rem' }}>⚡</span>
+                      <h3 style={{ margin: 0, fontSize: '1.25rem' }}>Inyección Automática (1 Clic)</h3>
+                    </div>
+                    <span className={`badge ${obsConnected ? 'badge-success' : 'badge-warning'}`}>
+                      {obsConnected ? 'OBS CONECTADO' : 'OBS DESCONECTADO'}
+                    </span>
+                  </div>
+
+                  <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1.2rem' }}>
+                    Conecta con <strong>OBS Studio v28+</strong> usando su servidor WebSocket nativo para inyectar la fuente de navegador automáticamente en tu escena activa.
+                  </p>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem', marginBottom: '1rem' }}>
+                    <div className="input-group" style={{ marginBottom: 0 }}>
+                      <label style={{ fontSize: '0.8rem' }}>Puerto WebSocket</label>
+                      <input
+                        type="number"
+                        className="input-field"
+                        value={obsPort}
+                        onChange={(e) => setObsPort(Number(e.target.value))}
+                        disabled={obsConnected || obsConnecting}
+                      />
+                    </div>
+                    <div className="input-group" style={{ marginBottom: 0 }}>
+                      <label style={{ fontSize: '0.8rem' }}>Contraseña (si aplica)</label>
+                      <input
+                        type="password"
+                        className="input-field"
+                        placeholder="Opcional"
+                        value={obsPassword}
+                        onChange={(e) => setObsPassword(e.target.value)}
+                        disabled={obsConnected || obsConnecting}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '0.8rem', marginBottom: '1rem' }}>
                     <button
                       className="btn"
-                      onClick={() => {
-                        navigator.clipboard.writeText('http://127.0.0.1:18923/#/overlay');
-                        showToast('📋 ¡URL copiada al portapapeles!');
-                      }}
+                      style={{ flex: 1, background: obsConnected ? '#ef4444' : 'linear-gradient(135deg, var(--accent-primary), var(--accent-hover))' }}
+                      onClick={obsConnected ? disconnectObs : connectObs}
+                      disabled={obsConnecting}
                     >
-                      Copiar
+                      {obsConnecting ? 'Conectando...' : obsConnected ? 'Desconectar OBS' : '🔌 Conectar con OBS'}
                     </button>
                   </div>
+
+                  {obsConnected && (
+                    <div style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid #10b981', borderRadius: '10px', padding: '1rem', marginTop: '0.5rem' }}>
+                      <div style={{ fontSize: '0.85rem', color: '#6ee7b7', marginBottom: '0.8rem' }}>
+                        🎯 <strong>Escena Actual en OBS:</strong> <span style={{ color: '#fff' }}>"{obsSceneName || 'Escena Principal'}"</span>
+                      </div>
+                      <button
+                        className="btn btn-success"
+                        style={{ width: '100%', padding: '0.9rem', fontWeight: 'bold' }}
+                        onClick={injectOverlayIntoObs}
+                      >
+                        ⚡ Inyectar / Crear Fuente en OBS Ahora
+                      </button>
+                    </div>
+                  )}
+
+                  {obsStatusMsg && (
+                    <div style={{ fontSize: '0.8rem', marginTop: '0.8rem', color: obsConnected ? '#10b981' : '#f87171' }}>
+                      {obsStatusMsg}
+                    </div>
+                  )}
                 </div>
 
-                <div className="input-group">
-                  <label>URL alternativa (Modo Web o Desarrollo Vite):</label>
-                  <div style={{ display: 'flex', gap: '1rem' }}>
-                    <input
-                      type="text"
-                      className="input-field"
-                      readOnly
-                      value="http://localhost:5173/#/overlay"
-                    />
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => {
-                        navigator.clipboard.writeText('http://localhost:5173/#/overlay');
-                        showToast('📋 ¡URL copiada al portapapeles!');
-                      }}
-                    >
-                      Copiar
-                    </button>
+                {/* METHOD 2: DRAG & DROP HTML FILE */}
+                <div className="feature-card" style={{ border: '1px solid rgba(16, 185, 129, 0.4)', background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.05), transparent)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1rem' }}>
+                    <span style={{ fontSize: '1.8rem' }}>📥</span>
+                    <h3 style={{ margin: 0, fontSize: '1.25rem' }}>Archivo Arrastrable (Drag & Drop)</h3>
                   </div>
-                </div>
 
-                <div style={{ marginTop: '1.5rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                  <a
-                    href="#/overlay"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="btn"
-                    style={{ textDecoration: 'none' }}
+                  <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+                    Descarga un archivo de acceso directo y <strong>arrástralo con el ratón directamente dentro de la ventana de OBS Studio</strong>. OBS creará la fuente automáticamente con resolución de pantalla completa.
+                  </p>
+
+                  <button
+                    className="btn btn-success"
+                    style={{ width: '100%', padding: '1rem', marginBottom: '1rem' }}
+                    onClick={downloadObsDragFile}
                   >
-                    Abrir Overlay en Pestaña Nueva
-                  </a>
+                    📥 Descargar Archivo para Arrastrar (.html)
+                  </button>
+
+                  <div style={{ fontSize: '0.8rem', color: '#94a3b8', background: 'rgba(0,0,0,0.3)', padding: '0.8rem', borderRadius: '8px' }}>
+                    💡 <strong>Cómo usar:</strong> Tras descargarlo, simplemente arrastra el archivo <code>StreamTroll_OBS_Overlay.html</code> adentro del lienzo negro de OBS.
+                  </div>
+                </div>
+
+                {/* METHOD 3: FLOATING POP-OUT & CHROMA MODE */}
+                <div className="feature-card" style={{ border: '1px solid rgba(236, 72, 153, 0.4)', background: 'linear-gradient(135deg, rgba(236, 72, 153, 0.05), transparent)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1rem' }}>
+                    <span style={{ fontSize: '1.8rem' }}>🪟</span>
+                    <h3 style={{ margin: 0, fontSize: '1.25rem' }}>Ventana Flotante (Pop-Out / Chroma)</h3>
+                  </div>
+
+                  <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+                    Ideal para <strong>TikTok Live Studio</strong> o si prefieres usar <strong>"Captura de Ventana"</strong> en lugar de fuente de navegador:
+                  </p>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+                    <button
+                      className="btn"
+                      style={{ width: '100%', background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)' }}
+                      onClick={() => openPopout(false)}
+                    >
+                      🪟 Abrir Ventana Pop-Out Transparente
+                    </button>
+
+                    <button
+                      className="btn"
+                      style={{ width: '100%', background: 'linear-gradient(135deg, #059669, #10b981)' }}
+                      onClick={() => openPopout(true)}
+                    >
+                      🟩 Abrir con Fondo Verde (Modo Chroma Key)
+                    </button>
+                  </div>
+
+                  <div style={{ fontSize: '0.8rem', color: '#94a3b8', background: 'rgba(0,0,0,0.3)', padding: '0.8rem', borderRadius: '8px', marginTop: '1rem' }}>
+                    💡 <strong>TikTok Live Studio:</strong> En el modo Chroma, añade la ventana capturada y aplícale el filtro "Fondo Croma" para que sea 100% transparente sobre tu juego.
+                  </div>
+                </div>
+
+              </div>
+
+              {/* METHOD 4: TRADITIONAL BROWSER SOURCE SETUP */}
+              <div className="feature-card" style={{ padding: '1.8rem' }}>
+                <h3 style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  📋 Método Manual Tradicional (Fuente de Navegador)
+                </h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+                  Si prefieres añadir la fuente a mano en OBS: en el panel <strong>Fuentes</strong>, presiona <strong>+</strong> ➔ selecciona <strong>Navegador</strong> ➔ pega la siguiente URL:
+                </p>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+                  <div className="input-group" style={{ marginBottom: 0 }}>
+                    <label>URL Nativa en Windows (Recomendada en App de Escritorio):</label>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <input
+                        type="text"
+                        className="input-field"
+                        readOnly
+                        value="http://127.0.0.1:18923/#/overlay"
+                        style={{ fontFamily: 'monospace', fontSize: '0.9rem' }}
+                      />
+                      <button
+                        className="btn"
+                        onClick={() => {
+                          navigator.clipboard.writeText('http://127.0.0.1:18923/#/overlay');
+                          showToast('📋 ¡URL nativa copiada al portapapeles!');
+                        }}
+                      >
+                        Copiar
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="input-group" style={{ marginBottom: 0 }}>
+                    <label>URL Nube / Web (Vercel):</label>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <input
+                        type="text"
+                        className="input-field"
+                        readOnly
+                        value={`${window.location.origin}${window.location.pathname}#/overlay`}
+                        style={{ fontFamily: 'monospace', fontSize: '0.9rem' }}
+                      />
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => {
+                          navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}#/overlay`);
+                          showToast('📋 ¡URL web copiada al portapapeles!');
+                        }}
+                      >
+                        Copiar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1rem' }}>
+                  <strong style={{ color: '#fbbf24', fontSize: '0.9rem' }}>⚙️ Configuración Óptima en OBS Studio:</strong>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.8rem', marginTop: '0.8rem', fontSize: '0.85rem', color: '#cbd5e1' }}>
+                    <div>📏 <strong>Ancho:</strong> 1920</div>
+                    <div>📐 <strong>Alto:</strong> 1080</div>
+                    <div>🚀 <strong>FPS:</strong> 60</div>
+                    <div>🔄 <strong>Reiniciar navegador cuando la fuente se active:</strong> Sí</div>
+                  </div>
                 </div>
               </div>
             </div>
