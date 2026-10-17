@@ -73,15 +73,52 @@ function createWindow() {
   }
 }
 
+// Function to resolve WebcastPushConnection class across different versions of tiktok-live-connector
+function getWebcastPushConnectionClass() {
+  // tiktok-live-connector v2.x exports WebcastPushConnection from the /legacy subpath
+  try {
+    const legacy = require('tiktok-live-connector/legacy');
+    if (legacy && typeof legacy.WebcastPushConnection === 'function') {
+      return legacy.WebcastPushConnection;
+    }
+  } catch (e) {
+    // Legacy subpath not found, try root
+  }
+
+  // Fallback for tiktok-live-connector v1.x or direct export
+  try {
+    const mainMod = require('tiktok-live-connector');
+    if (mainMod && typeof mainMod.WebcastPushConnection === 'function') {
+      return mainMod.WebcastPushConnection;
+    }
+    if (mainMod && typeof mainMod.TikTokLiveConnection === 'function') {
+      return mainMod.TikTokLiveConnection;
+    }
+    if (typeof mainMod === 'function') {
+      return mainMod;
+    }
+    if (mainMod && mainMod.default && typeof mainMod.default.WebcastPushConnection === 'function') {
+      return mainMod.default.WebcastPushConnection;
+    }
+    if (mainMod && mainMod.default && typeof mainMod.default === 'function') {
+      return mainMod.default;
+    }
+  } catch (e) {
+    console.error('Error cargando tiktok-live-connector:', e);
+  }
+
+  throw new Error('No se pudo encontrar la clase constructora WebcastPushConnection en la librería tiktok-live-connector.');
+}
+
 // TikTok Live IPC Handlers
 ipcMain.handle('tiktok:connect', async (event, username) => {
   try {
-    const { WebcastPushConnection } = require('tiktok-live-connector');
+    const WebcastPushConnection = getWebcastPushConnectionClass();
     if (tiktokConnection) {
       try { tiktokConnection.disconnect(); } catch (e) {}
     }
 
-    const cleanUser = username.replace(/^@/, '').trim();
+    const cleanUser = username ? username.replace(/^@/, '').trim() : '';
     if (!cleanUser) {
       return { success: false, error: 'Por favor ingresa un nombre de usuario de TikTok.' };
     }
@@ -112,9 +149,23 @@ ipcMain.handle('tiktok:connect', async (event, username) => {
       }
     });
 
+    tiktokConnection.on('streamEnd', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('tiktok:status', { connected: false, message: 'La transmisión en vivo de TikTok ha finalizado.' });
+      }
+    });
+
+    tiktokConnection.on('error', (err) => {
+      console.error('TikTok Live runtime error:', err);
+    });
+
     return { success: true, roomId: state.roomId, username: cleanUser };
   } catch (error) {
-    return { success: false, error: error.message || 'No se pudo conectar con el directo de TikTok. Verifica que el usuario esté en directo actualmente.' };
+    let msg = error.message || 'No se pudo conectar con el directo de TikTok. Verifica que el usuario esté en directo actualmente.';
+    if (msg.includes('Failed to retrieve Room ID') || msg.includes('LIVE has ended') || msg.includes('User is offline') || msg.includes('not currently live')) {
+      msg = `El usuario @${username ? username.replace(/^@/, '').trim() : ''} no está en directo en este momento o el usuario no existe. Asegúrate de que la transmisión esté activa en TikTok.`;
+    }
+    return { success: false, error: msg };
   }
 });
 

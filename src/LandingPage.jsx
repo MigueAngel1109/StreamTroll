@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import './LandingPage.css';
 
 function LandingPage() {
-  const downloadUrl = "https://github.com/MigueAngel1109/StreamTroll/releases/download/StreamTroll/StreamTroll.Setup.1.0.1.exe";
+  const downloadUrl = "https://github.com/MigueAngel1109/StreamTroll/releases/download/StreamTroll/StreamTroll.Setup.1.0.2.exe";
 
   return (
     <div className="landing-wrapper">
