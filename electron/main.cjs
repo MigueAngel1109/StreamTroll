@@ -1,10 +1,11 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, screen } = require('electron');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
 
 const isDev = process.env.NODE_ENV === 'development';
 let mainWindow = null;
+let loginWindow = null;
 let tiktokConnection = null;
 
 // Start local HTTP server for OBS Studio Browser Source in production
@@ -55,6 +56,7 @@ function createWindow() {
     height: 800,
     minWidth: 1024,
     minHeight: 768,
+    title: 'Stream Troll - Stream Effects Manager',
     backgroundColor: '#0f172a',
     webPreferences: {
       nodeIntegration: true,
@@ -113,6 +115,14 @@ function getWebcastPushConnectionClass() {
 // TikTok Live IPC Handlers
 ipcMain.handle('tiktok:connect', async (event, username) => {
   try {
+    // Intercept RouteConfig to ensure free community tier connection without Euler Business Plan errors
+    try {
+      const { RouteConfig } = require('tiktok-live-connector');
+      if (RouteConfig) {
+        RouteConfig.fetchRoomGifts = async () => [];
+      }
+    } catch (e) {}
+
     const WebcastPushConnection = getWebcastPushConnectionClass();
     if (tiktokConnection) {
       try { tiktokConnection.disconnect(); } catch (e) {}
@@ -125,7 +135,7 @@ ipcMain.handle('tiktok:connect', async (event, username) => {
 
     tiktokConnection = new WebcastPushConnection(cleanUser, {
       processInitialData: false,
-      enableExtendedGiftInfo: true,
+      enableExtendedGiftInfo: false,
       requestPollingIntervalMs: 1000
     });
 
@@ -135,7 +145,7 @@ ipcMain.handle('tiktok:connect', async (event, username) => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('tiktok:gift', {
           user: data.uniqueId || data.nickname || 'Anónimo',
-          giftName: data.giftName || 'Regalo',
+          giftName: data.giftName || data.describe || data.giftDetails?.giftName || data.extendedGiftInfo?.name || 'Regalo',
           diamondCount: data.diamondCount || 0,
           repeatCount: data.repeatCount || 1,
           timestamp: Date.now()
@@ -162,7 +172,7 @@ ipcMain.handle('tiktok:connect', async (event, username) => {
     return { success: true, roomId: state.roomId, username: cleanUser };
   } catch (error) {
     let msg = error.message || 'No se pudo conectar con el directo de TikTok. Verifica que el usuario esté en directo actualmente.';
-    if (msg.includes('Failed to retrieve Room ID') || msg.includes('LIVE has ended') || msg.includes('User is offline') || msg.includes('not currently live')) {
+    if (msg.includes('Failed to retrieve Room ID') || msg.includes('LIVE has ended') || msg.includes('User is offline') || msg.includes('not currently live') || msg.includes("isn't online")) {
       msg = `El usuario @${username ? username.replace(/^@/, '').trim() : ''} no está en directo en este momento o el usuario no existe. Asegúrate de que la transmisión esté activa en TikTok.`;
     }
     return { success: false, error: msg };
@@ -175,6 +185,59 @@ ipcMain.handle('tiktok:disconnect', async () => {
     tiktokConnection = null;
   }
   return { success: true };
+});
+
+ipcMain.handle('tiktok:open-login', async () => {
+  if (loginWindow && !loginWindow.isDestroyed()) {
+    loginWindow.focus();
+    return { success: true };
+  }
+
+  loginWindow = new BrowserWindow({
+    width: 820,
+    height: 760,
+    minWidth: 500,
+    minHeight: 600,
+    title: 'Iniciar sesión | TikTok',
+    backgroundColor: '#121212',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true
+    },
+    autoHideMenuBar: false
+  });
+
+  loginWindow.loadURL('https://www.tiktok.com/login');
+
+  loginWindow.on('closed', () => {
+    loginWindow = null;
+  });
+
+  return { success: true };
+});
+
+ipcMain.handle('system:get-screens', async () => {
+  try {
+    const displays = screen.getAllDisplays();
+    const primaryId = screen.getPrimaryDisplay().id;
+    return displays.map((d, index) => ({
+      id: d.id,
+      name: `Screen ${index + 1}`,
+      resolution: `${d.bounds.width} x ${d.bounds.height}`,
+      position: `Position: (${d.bounds.x}, ${d.bounds.y})`,
+      isPrimary: d.id === primaryId
+    }));
+  } catch (err) {
+    return [
+      {
+        id: 1,
+        name: 'Screen 1',
+        resolution: '1080 x 1920',
+        position: 'Position: (0, 0)',
+        isPrimary: true
+      }
+    ];
+  }
 });
 
 app.whenReady().then(() => {

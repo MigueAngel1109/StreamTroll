@@ -5,6 +5,8 @@ const channel = new BroadcastChannel('stream_troll_channel');
 function Overlay() {
   const [activeEffect, setActiveEffect] = useState('');
   const [alerts, setAlerts] = useState([]);
+  const [graphicsEnabled, setGraphicsEnabled] = useState(true);
+  const [showGrid, setShowGrid] = useState(false);
 
   const [showStatus, setShowStatus] = useState(true);
 
@@ -21,9 +23,18 @@ function Overlay() {
 
     channel.onmessage = (event) => {
       const data = event.data;
-      if (data.type === 'SHADER') {
-        setActiveEffect(data.effect);
-        setTimeout(() => setActiveEffect(''), data.duration || 5000);
+      if (data.type === 'ENGINE_CONFIG') {
+        if (typeof data.graphicsEngine === 'boolean') {
+          setGraphicsEnabled(data.graphicsEngine);
+        }
+        if (typeof data.alignmentGrid === 'boolean') {
+          setShowGrid(data.alignmentGrid);
+        }
+      } else if (data.type === 'SHADER') {
+        if (graphicsEnabled) {
+          setActiveEffect(data.effect);
+          setTimeout(() => setActiveEffect(''), data.duration || 5000);
+        }
       } else if (data.type === 'ALERT') {
         const id = Date.now();
         
@@ -49,10 +60,27 @@ function Overlay() {
       document.body.style.backgroundImage = '';
       document.body.style.color = '';
     };
-  }, []);
+  }, [graphicsEnabled, isChroma]);
 
   return (
     <div className={`overlay-container ${activeEffect}`}>
+      {/* Alignment Grid Overlay */}
+      {showGrid && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          pointerEvents: 'none',
+          backgroundImage: 'linear-gradient(to right, rgba(59, 130, 246, 0.25) 1px, transparent 1px), linear-gradient(to bottom, rgba(59, 130, 246, 0.25) 1px, transparent 1px)',
+          backgroundSize: '80px 80px',
+          border: '2px dashed rgba(59, 130, 246, 0.6)',
+          zIndex: 9998
+        }}>
+          <div style={{ position: 'absolute', top: '10px', left: '10px', background: 'rgba(0,0,0,0.8)', color: '#38bdf8', padding: '4px 10px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>
+            📐 ALIGNMENT GRID (OBS STUDIO / TROLL ME)
+          </div>
+        </div>
+      )}
+
       {showStatus && (
         <div style={{ position: 'absolute', bottom: '20px', right: '20px', background: 'rgba(0,0,0,0.7)', padding: '10px 14px', borderRadius: '8px', border: '1px solid #4ade80', transition: 'opacity 0.5s' }}>
           <span style={{color: '#4ade80', fontWeight: 'bold'}}>🟢 OVERLAY ACTIVO Y CONECTADO</span>
